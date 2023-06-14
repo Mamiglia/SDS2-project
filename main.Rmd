@@ -20,8 +20,11 @@ data = read.csv('/home/mamiglia/Documents/Cazzeggio/Occhiali/matteo-glasses-edit
 The data consists in matrix $X$ of $45 \times 11$ observations, where each $X_{ij}$ is either an approval or a rejection of the $i$th judge to the $j$th pair of glasses (items).
 
 Some of these datapoints are missing.
-```{r}
-ggplot(melt(data), aes(Var1,Var2, fill=value)) + geom_raster()
 
+Below a graphical rappresentation of the dataset.
+```{r values heatmap, echo=FALSE}
+ggplot(melt(data), aes(Var2,Var1, fill=value)) + 
+  geom_raster() +
+  theme_void() + theme(aspect.ratio=1)
 ```
 
