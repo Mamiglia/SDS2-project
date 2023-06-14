@@ -1,0 +1,27 @@
+---
+title: "SDS - project"
+author: "Matteo Migliarini"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r imports, include=FALSE}
+library(tidyverse)
+library(reshape2)
+data = read.csv('/home/mamiglia/Documents/Cazzeggio/Occhiali/matteo-glasses-edited.csv') %>% 
+  select(num_range('X', 1:11)) %>%
+  replace(. == 'Yay', 1) %>%
+  replace(. == 'Nay', 0) %>% 
+  replace(. == '',   NA) %>%
+  mutate_all(as.numeric) %>%
+  as.matrix()
+```
+
+# Data
+The data consists in matrix $X$ of $45 \times 11$ observations, where each $X_{ij}$ is either an approval or a rejection of the $i$th judge to the $j$th pair of glasses (items).
+
+Some of these datapoints are missing.
+```{r}
+ggplot(melt(data), aes(Var1,Var2, fill=value)) + geom_raster()
+
+```
+
