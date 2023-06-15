@@ -5,6 +5,6 @@ model{
       X[i,j] ~ dbin(theta[i,j], 1)      #data# X
     }
   }
-  psi ~ ddirich(rep(1,J)) 
-  tau ~ ddirich(rep(3,I)) 
+  psi ~ ddirich(rep(30,J)) 
+  tau ~ ddirich(rep(10,I)) 
 }

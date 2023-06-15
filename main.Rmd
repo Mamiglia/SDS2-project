@@ -8,6 +8,7 @@ output: html_document
 library(tidyverse)
 library(reshape2)
 library(viridisLite)
+library(LaplacesDemon)
 data = read.csv('/home/mamiglia/Documents/Cazzeggio/Occhiali/matteo-glasses-edited.csv') %>% 
   select(num_range('X', 1:11)) %>%
   replace(. == 'Yay', 1) %>%
@@ -56,9 +57,22 @@ We model both the judges' attitude and the items' quality with a Dirichlet distr
 system('cat models/dirichlet.txt')
 ```
 ```{r}
-s = rdirichlet(10000, rep(0.1,11))
+tibble(x=seq(0,M))
+```
 
-mean(s < 1/sqrt(sum(data, na.rm=T)))
+
+```{r}
+M = 1/sqrt(sum(data, na.rm=T))
+
+s <- Vectorize(function(a,size=46) 
+  rep(a,size) %>%
+  rdirichlet(1000, .) %>%
+  apply(1, max) %>% ifelse(.<M*11/46) %>% mean)
+
+tibble(x=seq(0.1,10, length=100)) %>%
+  mutate(y=s(x, size=46)) %>%
+  ggplot(aes(x=x,y=y)) +
+  geom_line()
 ```
 
 
