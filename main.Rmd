@@ -7,6 +7,7 @@ output: html_document
 ```{r imports, include=FALSE}
 library(tidyverse)
 library(reshape2)
+library(viridisLite)
 data = read.csv('/home/mamiglia/Documents/Cazzeggio/Occhiali/matteo-glasses-edited.csv') %>% 
   select(num_range('X', 1:11)) %>%
   replace(. == 'Yay', 1) %>%
@@ -25,6 +26,89 @@ Below a graphical rappresentation of the dataset.
 ```{r values heatmap, echo=FALSE}
 ggplot(melt(data), aes(Var2,Var1, fill=value)) + 
   geom_raster() +
-  theme_void() + theme(aspect.ratio=1)
+  theme_void() + theme(aspect.ratio=1) + scale_fill_viridis_c()
+```
+
+# Jags
+```{r}
+library('R2jags')
+jags_output_as_df <- function(jags_out) {
+  bugs_out = jags_out$BUGSoutput$sims.array
+  df = as.data.frame(bugs_out)
+  colnames(df) = dimnames(bugs_out)[[3]]
+  
+  df
+}
+
+ITER = 10000
+BURNIN = 1000
+
+I = nrow(data)
+J = ncol(data)
+jags_data = list(X = data, I = I, J = J, M = sum(data, na.rm=T))
+```
+
+
+## Dirichlet 
+We model both the judges' attitude and the items' quality with a Dirichlet distribution.
+
+```{r echo=FALSE}
+system('cat models/dirichlet.txt')
+```
+```{r}
+s = rdirichlet(10000, rep(0.1,11))
+
+mean(s < 1/sqrt(sum(data, na.rm=T)))
+```
+
+
+```{r}
+init.dir = list(init1 = list(psi=rep(1/J, J), tau=rep(1/I, I)))
+
+jags.dir = jags(jags_data,
+     model.file = 'models/dirichlet.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     inits = init.dir,
+     n.chains = length(init.dir),
+     parameters.to.save = c('psi', 'tau', 'theta'),
+)
+```
+```{r}
+jags_output_as_df(jags.dir) %>%
+  select(starts_with('theta')) %>%
+  melt() %>%
+  mutate(
+    x=sub("theta\\[(\\d+),\\d+\\]", "\\1", variable) %>% as.numeric,
+    y=sub("theta\\[\\d+,(\\d+)\\]", "\\1", variable) %>% as.numeric,
+  ) %>%
+  mutate(value = pmin(1,value)) %>% # SOME VALUES ARE OVER 1!
+  ggplot(aes(x=y,y=x,fill=value)) +
+  geom_raster() +
+  theme_void() + theme(aspect.ratio=1) + scale_fill_viridis_c()
+```
+
+SOME VALUES ARE OVER 1, THAT'S STRANGE
+```{r}
+t = jags_output_as_df(jags.dir) %>%
+  select(starts_with('theta')) %>%
+  melt() %>%
+  mutate(
+    x=sub("theta\\[(\\d+),\\d+\\]", "\\1", variable) %>% as.numeric,
+    y=sub("theta\\[\\d+,(\\d+)\\]", "\\1", variable) %>% as.numeric,
+  )
+
+sum(t$value > 1)
+```
+
+```{r}
+jags_output_as_df(jags.dir) %>%
+  select(starts_with('psi')) %>%
+  melt() %>%
+  mutate(
+    variable=sub('\\w+\\[(\\d+).*', '\\1', variable) %>% as.numeric) %>%
+  ggplot(aes(x=variable, group=variable, y = value)) +
+  geom_boxplot()
+  
 ```
 

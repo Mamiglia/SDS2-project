@@ -1,0 +1,10 @@
+model{
+  for(i in 1:I){                        #data# I
+    for(j in 1:J) {                     #data# J
+      theta[i,j] <- psi[j] * tau[i] * M  #
+      X[i,j] ~ dbin(theta[i,j], 1)      #data# X
+    }
+  }
+  psi ~ ddirich(rep(1,J)) 
+  tau ~ ddirich(rep(3,I)) 
+}
