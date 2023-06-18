@@ -41,12 +41,36 @@ jags_output_as_df <- function(jags_out) {
   df
 }
 
-ITER = 10000
-BURNIN = 1000
+ITER = 1000
+BURNIN = 100
 
 I = nrow(data)
 J = ncol(data)
-jags_data = list(X = data, I = I, J = J, M = sum(data, na.rm=T))
+# jags_data = list(X = data, I = I, J = J)
+obs = melt(data)
+colnames(obs) <- c('user', 'item', 'rating')
+obs$item <- as.integer(obs$item)
+obs$rating <- as.integer(obs$rating)
+obs <- obs[complete.cases(obs),]
+
+stan_data = list(I=I, J=J, N = nrow(obs), y = obs$rating, item = obs$item, user = obs$user, psi_0=1, phi_0=1)
+
+```
+
+```{r}
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+stan(
+  file = 'models/dirichlet.stan',
+  data = stan_data,
+  chains = 1,
+  warmup = BURNIN,
+  iter = ITER,
+  
+  
+)
 ```
 
 
@@ -56,9 +80,6 @@ We model both the judges' attitude and the items' quality with a Dirichlet distr
 ```{r echo=FALSE}
 system('cat models/dirichlet.txt')
 ```
-```{r}
-tibble(x=seq(0,M))
-```
 
 
 ```{r}
@@ -67,9 +88,9 @@ M = 1/sqrt(sum(data, na.rm=T))
 s <- Vectorize(function(a,size=46) 
   rep(a,size) %>%
   rdirichlet(1000, .) %>%
-  apply(1, max) %>% ifelse(.<M*11/46) %>% mean)
+  apply(1, max) %>% ifelse(.<M/2) %>% mean)
 
-tibble(x=seq(0.1,10, length=100)) %>%
+tibble(x=seq(1,30, length=100)) %>%
   mutate(y=s(x, size=46)) %>%
   ggplot(aes(x=x,y=y)) +
   geom_line()
@@ -88,6 +109,11 @@ jags.dir = jags(jags_data,
      parameters.to.save = c('psi', 'tau', 'theta'),
 )
 ```
+```{r}
+# print(jags.dir)
+```
+
+
 ```{r}
 jags_output_as_df(jags.dir) %>%
   select(starts_with('theta')) %>%
@@ -117,7 +143,7 @@ sum(t$value > 1)
 
 ```{r}
 jags_output_as_df(jags.dir) %>%
-  select(starts_with('psi')) %>%
+  select(starts_with('tau')) %>%
   melt() %>%
   mutate(
     variable=sub('\\w+\\[(\\d+).*', '\\1', variable) %>% as.numeric) %>%
