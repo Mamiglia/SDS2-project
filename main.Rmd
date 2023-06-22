@@ -98,15 +98,15 @@ tibble(x=seq(1,30, length=100)) %>%
 
 
 ```{r}
-# init.dir = list(init1 = list(psi=rep(1/J, J), tau=rep(1/I, I)))
+init.dir = list(init1 = list(psi=rep(1/J, J), phi=rep(1/I, I)))
 
 jags.dir = jags(jags_data,
      model.file = 'models/dirichlet.txt',
      n.iter = ITER + BURNIN,
      n.burnin = BURNIN,
-     # inits = init.dir,
+     inits = init.dir,
      n.chains = length(init.dir),
-     parameters.to.save = c('psi', 'tau', 'theta'),
+     parameters.to.save = c('psi', 'phi', 'theta'),
 )
 ```
 
@@ -123,6 +123,16 @@ jags_output_as_df(jags.dir) %>%
   ggplot(aes(x=y,y=x,fill=value)) +
   geom_raster() +
   theme_void() + theme(aspect.ratio=1) + scale_fill_viridis_c()
+```
+
+
+```{r}
+jags_output_as_df(jags.dir) %>%
+  select(starts_with('psi[5]')) %>%
+  melt() %>%
+  rowid_to_column("index") %>%
+  ggplot(aes(x=index,y = value)) +
+  geom_line()
 ```
 
 SOME VALUES ARE OVER 1, THAT'S STRANGE
