@@ -9,7 +9,7 @@ library(tidyverse)
 library(reshape2)
 library(viridisLite)
 library(LaplacesDemon)
-data = read.csv('/home/mamiglia/Documents/Cazzeggio/Occhiali/matteo-glasses-edited.csv') %>% 
+data = read.csv('data/matteo-glasses-edited.csv') %>% 
   select(num_range('X', 1:11)) %>%
   replace(. == 'Yay', 1) %>%
   replace(. == 'Nay', 0) %>% 
