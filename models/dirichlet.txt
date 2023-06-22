@@ -1,10 +1,22 @@
 model{
-  for(i in 1:I){                        #data# I
-    for(j in 1:J) {                     #data# J
-      theta[i,j] <- psi[j] * tau[i] * M  #
-      X[i,j] ~ dbin(theta[i,j], 1)      #data# X
+  # trick for getting max value
+  phi_sort <- sort(phi)
+  psi_sort <- sort(psi)
+  phi_max <- phi_sort[I]
+  psi_max <- psi_sort[J]
+  
+  for(i in 1:I){                       
+    for(j in 1:J) {                    
+      theta[i,j] <- psi[j] * phi[i] / phi_max / psi_max
+      
+      # trick for clipping theta
+      temp[i,j] <- min(theta[i,j], 0.999999999)
+      theta_clip[i,j] <- max(temp[i,j], 0.000000001)
+      
+      X[i,j] ~ dbern(theta_clip[i,j])      
     }
   }
-  psi ~ ddirich(rep(30,J)) 
-  tau ~ ddirich(rep(10,I)) 
+  
+  psi ~ ddirich(rep(1,J)) 
+  phi ~ ddirich(rep(1,I)) 
 }

@@ -46,7 +46,7 @@ BURNIN = 100
 
 I = nrow(data)
 J = ncol(data)
-# jags_data = list(X = data, I = I, J = J)
+jags_data = list(X = data, I = I, J = J)
 obs = melt(data)
 colnames(obs) <- c('user', 'item', 'rating')
 obs$item <- as.integer(obs$item)
@@ -98,19 +98,16 @@ tibble(x=seq(1,30, length=100)) %>%
 
 
 ```{r}
-init.dir = list(init1 = list(psi=rep(1/J, J), tau=rep(1/I, I)))
+# init.dir = list(init1 = list(psi=rep(1/J, J), tau=rep(1/I, I)))
 
 jags.dir = jags(jags_data,
      model.file = 'models/dirichlet.txt',
      n.iter = ITER + BURNIN,
      n.burnin = BURNIN,
-     inits = init.dir,
+     # inits = init.dir,
      n.chains = length(init.dir),
      parameters.to.save = c('psi', 'tau', 'theta'),
 )
-```
-```{r}
-# print(jags.dir)
 ```
 
 
@@ -143,7 +140,7 @@ sum(t$value > 1)
 
 ```{r}
 jags_output_as_df(jags.dir) %>%
-  select(starts_with('tau')) %>%
+  select(starts_with('psi')) %>%
   melt() %>%
   mutate(
     variable=sub('\\w+\\[(\\d+).*', '\\1', variable) %>% as.numeric) %>%
