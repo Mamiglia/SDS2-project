@@ -25,9 +25,13 @@ Some of these datapoints are missing.
 
 Below a graphical rappresentation of the dataset.
 ```{r values heatmap, echo=FALSE}
-ggplot(melt(data), aes(Var2,Var1, fill=value)) + 
+heatmap <- function(melted_data, x='x', y='y', value='value') melted_data %>%
+  rename(x = x, y=y, value=value) %>%
+  ggplot(aes(x,y, fill=value)) +
   geom_raster() +
-  theme_void() + theme(aspect.ratio=1) + scale_fill_viridis_c()
+  theme_void() + theme(aspect.ratio=1) + scale_fill_viridis_c(limits=c(0,1))
+
+heatmap(melt(data), 'Var2', 'Var1')
 ```
 
 # Jags
