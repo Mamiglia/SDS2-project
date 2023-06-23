@@ -160,6 +160,7 @@ dir.mcmc %>%
 ```
 # Altro
 ## Stan
+# Independent Betas
 ```{r}
 library(rstan)
 options(mc.cores = parallel::detectCores())
@@ -181,6 +182,35 @@ stan(
   iter = ITER,
   
   
+system('cat models/independent-betas.txt')
+```
+```{r}
+init.betas = list(init1 = list(psi=rep(0.5, J), tau=rep(0.5, I)))
+
+jags.betas = jags(jags_data,
+     model.file = 'models/independent-betas.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     inits = init.betas,
+     n.thin = 1,
+     n.chains = length(init.betas),
+     parameters.to.save = c('psi', 'tau', 'theta'),
 )
+
+betas.mcmc = jags_output_as_df(jags.betas)
+
+jags.betas$BUGSoutput$DIC
 ```
 
+```{r}
+betas.mcmc %>%
+  get_theta_grid() %>%
+  heatmap()
+```
+
+```{r}
+betas.mcmc %>% 
+  get_vector_variable('psi') %>%
+  ggplot(aes(x=variable, group=variable, y = value)) +
+  geom_boxplot()
+```
