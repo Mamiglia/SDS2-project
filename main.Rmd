@@ -145,30 +145,8 @@ dir.mcmc %>%
   geom_boxplot()
   
 ```
-# Altro
-## Stan
 # Independent Betas
 ```{r}
-library(rstan)
-options(mc.cores = parallel::detectCores())
-rstan_options(auto_write = TRUE)
-
-obs = melt(data)
-colnames(obs) <- c('user', 'item', 'rating')
-obs$item <- as.integer(obs$item)
-obs$rating <- as.integer(obs$rating)
-obs <- obs[complete.cases(obs),]
-
-stan_data = list(I=I, J=J, N = nrow(obs), y = obs$rating, item = obs$item, user = obs$user, psi_0=1, phi_0=1)
-
-stan(
-  file = 'models/dirichlet.stan',
-  data = stan_data,
-  chains = 1,
-  warmup = BURNIN,
-  iter = ITER,
-  
-  
 system('cat models/independent-betas.txt')
 ```
 ```{r}
