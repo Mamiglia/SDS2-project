@@ -116,19 +116,20 @@ jags.dir = jags(jags_data,
 
 
 ```{r}
-jags_output_as_df(jags.dir) %>%
+get_theta_grid <- function(data) data %>%
   select(starts_with('theta')) %>%
   melt() %>%
+  group_by(variable) %>%
+  summarise(value = median(value)) %>%
   mutate(
-    x=sub("theta\\[(\\d+),\\d+\\]", "\\1", variable) %>% as.numeric,
-    y=sub("theta\\[\\d+,(\\d+)\\]", "\\1", variable) %>% as.numeric,
-  ) %>%
-  mutate(value = pmin(1,value)) %>% # SOME VALUES ARE OVER 1!
-  ggplot(aes(x=y,y=x,fill=value)) +
-  geom_raster() +
-  theme_void() + theme(aspect.ratio=1) + scale_fill_viridis_c()
-```
+    y=sub("theta\\[(\\d+),\\d+\\]", "\\1", variable) %>% as.numeric,
+    x=sub("theta\\[\\d+,(\\d+)\\]", "\\1", variable) %>% as.numeric,
+  )
 
+dir.mcmc %>%
+  get_theta_grid() %>%
+  heatmap()
+```
 
 ```{r}
 jags_output_as_df(jags.dir) %>%
