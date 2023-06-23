@@ -63,19 +63,6 @@ system('cat models/dirichlet.txt')
 
 
 ```{r}
-M = 1/sqrt(sum(data, na.rm=T))
-
-s <- Vectorize(function(a,size=46) 
-  rep(a,size) %>%
-  rdirichlet(1000, .) %>%
-  apply(1, max) %>% ifelse(.<M/2) %>% mean)
-
-tibble(x=seq(1,30, length=100)) %>%
-  mutate(y=s(x, size=46)) %>%
-  ggplot(aes(x=x,y=y)) +
-  geom_line()
-```
-
 
 ```{r}
 init.dir = list(init1 = list(psi=rep(1/J, J), phi=rep(1/I, I)))
