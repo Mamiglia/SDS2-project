@@ -154,11 +154,15 @@ sum(t$value > 1)
 ```
 
 ```{r}
-jags_output_as_df(jags.dir) %>%
+get_vector_variable <- function(data, var) data%>%
   select(starts_with('psi')) %>%
   melt() %>%
   mutate(
-    variable=sub('\\w+\\[(\\d+).*', '\\1', variable) %>% as.numeric) %>%
+    variable=sub('\\w+\\[(\\d+).*', '\\1', variable) %>% as.numeric
+  )
+
+dir.mcmc %>%
+  get_vector_variable('psi') %>%
   ggplot(aes(x=variable, group=variable, y = value)) +
   geom_boxplot()
   
