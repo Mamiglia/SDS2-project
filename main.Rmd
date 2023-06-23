@@ -45,14 +45,13 @@ jags_output_as_df <- function(jags_out) {
   df
 }
 
-ITER = 1000
-BURNIN = 100
+ITER = 10000
+BURNIN = 1
 
 I = nrow(data)
 J = ncol(data)
 jags_data = list(X = data, I = I, J = J)
 ```
-
 
 ## Dirichlet 
 We model both the judges' attitude and the items' quality with a Dirichlet distribution.
@@ -63,18 +62,21 @@ system('cat models/dirichlet.txt')
 
 
 ```{r}
-
-```{r}
-init.dir = list(init1 = list(psi=rep(1/J, J), phi=rep(1/I, I)))
+init.dir = list(init1 = list(psi=rep(1/J, J), tau=rep(1/I, I)))
 
 jags.dir = jags(jags_data,
      model.file = 'models/dirichlet.txt',
      n.iter = ITER + BURNIN,
      n.burnin = BURNIN,
      inits = init.dir,
+     n.thin = 1,
      n.chains = length(init.dir),
-     parameters.to.save = c('psi', 'phi', 'theta'),
+     parameters.to.save = c('psi', 'tau', 'theta', 'psi_max'),
 )
+
+dir.mcmc = jags_output_as_df(jags.dir)
+jags.dir$BUGSoutput$DIC
+
 ```
 
 
@@ -120,7 +122,7 @@ plot_grid(plotlist = tplots,
 
 SOME VALUES ARE OVER 1, THAT'S STRANGE
 ```{r}
-t = jags_output_as_df(jags.dir) %>%
+t = dir.mcmc %>%
   select(starts_with('theta')) %>%
   melt() %>%
   mutate(
