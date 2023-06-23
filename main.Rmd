@@ -132,12 +132,27 @@ dir.mcmc %>%
 ```
 
 ```{r}
-jags_output_as_df(jags.dir) %>%
-  select(starts_with('psi[5]')) %>%
+jags.trace <- function(data, var) data %>%
+  select(var) %>%
   melt() %>%
   rowid_to_column("index") %>%
   ggplot(aes(x=index,y = value)) +
   geom_line()
+  
+```
+
+La maggior parte delle variabili e' poco stabile
+```{r}
+vars.tplot = sample(colnames(dir.mcmc), 5)
+tplots = vars.tplot %>%
+  map(~ jags.trace(dir.mcmc, .))
+names(tplots) = vars.tplot 
+
+
+
+library(cowplot)
+plot_grid(plotlist = tplots,
+          nrow = 3, labels=vars.tplot)
 ```
 
 SOME VALUES ARE OVER 1, THAT'S STRANGE
