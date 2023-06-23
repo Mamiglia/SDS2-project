@@ -1,13 +1,13 @@
 model{
   # trick for getting max value
-  phi_sort <- sort(phi)
+  tau_sort <- sort(tau)
   psi_sort <- sort(psi)
-  phi_max <- phi_sort[I]
+  tau_max <- tau_sort[I]
   psi_max <- psi_sort[J]
   
   for(i in 1:I){                       
     for(j in 1:J) {                    
-      theta[i,j] <- psi[j] * phi[i] / phi_max / psi_max
+      theta[i,j] <- psi[j] * tau[i] / tau_max / psi_max
       
       # trick for clipping theta
       temp[i,j] <- min(theta[i,j], 0.999999999)
@@ -18,5 +18,5 @@ model{
   }
   
   psi ~ ddirich(rep(1,J)) 
-  phi ~ ddirich(rep(1,I)) 
+  tau ~ ddirich(rep(1,I)) 
 }
