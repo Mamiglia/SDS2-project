@@ -7,6 +7,7 @@ output: html_document
 ```{r imports, include=FALSE}
 library(tidyverse)
 library(reshape2)
+library(cowplot)
 library(viridisLite)
 library(LaplacesDemon)
 data = read.csv('data/matteo-glasses-edited.csv') %>% 
@@ -17,6 +18,9 @@ data = read.csv('data/matteo-glasses-edited.csv') %>%
   mutate_all(as.numeric) %>%
   as.matrix()
 ```
+
+https://people.stat.sc.edu/hansont/stat740/jags_user_manual.pdf
+
 
 # Data
 The data consists in matrix $X$ of $45 \times 11$ observations, where each $X_{ij}$ is either an approval or a rejection of the $i$th judge to the $j$th pair of glasses (items).
@@ -71,7 +75,7 @@ jags.dir = jags(jags_data,
      inits = init.dir,
      n.thin = 1,
      n.chains = length(init.dir),
-     parameters.to.save = c('psi', 'tau', 'theta', 'psi_max'),
+     parameters.to.save = c('psi', 'tau', 'theta'),
 )
 
 dir.mcmc = jags_output_as_df(jags.dir)
@@ -102,22 +106,20 @@ jags.trace <- function(data, var) data %>%
   melt() %>%
   rowid_to_column("index") %>%
   ggplot(aes(x=index,y = value)) +
-  geom_line()
+  geom_line() + ylim(0,1)
   
 ```
 
 La maggior parte delle variabili e' poco stabile
 ```{r}
-vars.tplot = sample(colnames(dir.mcmc), 5)
-tplots = vars.tplot %>%
+# variables of which we want to see the trace plot
+vars.tplot = c('theta[13,11]', 'theta[13,10]','tau[11]', 'tau[14]', 'psi[2]', 'psi[11]')
+tplots.dir = vars.tplot %>%
   map(~ jags.trace(dir.mcmc, .))
-names(tplots) = vars.tplot 
+names(tplots.dir) = vars.tplot 
 
-
-
-library(cowplot)
-plot_grid(plotlist = tplots,
-          nrow = 3, labels=vars.tplot)
+plot_grid(plotlist = tplots.dir,
+          ncol = 2, labels=vars.tplot)
 ```
 
 SOME VALUES ARE OVER 1, THAT'S STRANGE
@@ -135,7 +137,7 @@ sum(t$value > 1)
 
 ```{r}
 get_vector_variable <- function(data, var) data%>%
-  select(starts_with('psi')) %>%
+  select(starts_with(var)) %>%
   melt() %>%
   mutate(
     variable=sub('\\w+\\[(\\d+).*', '\\1', variable) %>% as.numeric
@@ -175,9 +177,82 @@ betas.mcmc %>%
   heatmap()
 ```
 
+
+```{r}
+tplots.betas = vars.tplot %>%
+  map(~ jags.trace(betas.mcmc, .))
+names(tplots.betas) = vars.tplot 
+
+plot_grid(plotlist = tplots.betas,
+          ncol = 2, labels=vars.tplot)
+```
+
 ```{r}
 betas.mcmc %>% 
   get_vector_variable('psi') %>%
   ggplot(aes(x=variable, group=variable, y = value)) +
   geom_boxplot()
 ```
+# Multivariate Beta
+```{r}
+system('cat models/multivariate-beta.txt')
+```
+```{r}
+generate_corr <- function(size, cor=0.2) {
+  m = matrix(rep(cor,size^2), ncol=size)
+  diag(m) <- 1
+  m
+}
+```
+
+```{r}
+init.mvbeta = list(init1 = list(z_psi=rep(0, J), z_tau=rep(0, I)))
+params.mvbeta = list(
+  Sigma_psi = generate_corr(J,-0.01), 
+  Sigma_tau = generate_corr(I,0))
+
+
+jags.mvbeta = jags(c(jags_data, params.mvbeta),
+     model.file = 'models/multivariate-beta.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     inits = init.mvbeta,
+     n.thin = 1,
+     n.chains = length(init.mvbeta),
+     parameters.to.save = c('tau', 'psi', 'theta'),
+)
+
+mvbeta.mcmc = jags_output_as_df(jags.mvbeta)
+
+jags.mvbeta$BUGSoutput$DIC
+```
+```{r}
+mvbeta.mcmc %>%
+  select(starts_with('tau'))
+
+```
+
+
+```{r}
+mvbeta.mcmc %>%
+  get_theta_grid() %>%
+  heatmap()
+```
+
+
+```{r}
+tplots.mvbeta = vars.tplot %>%
+  map(~ jags.trace(mvbeta.mcmc, .))
+names(tplots.mvbeta) = vars.tplot 
+
+plot_grid(plotlist = tplots.mvbeta,
+          ncol = 2, labels=vars.tplot)
+```
+
+```{r}
+mvbeta.mcmc %>% 
+  get_vector_variable('tau') %>%
+  ggplot(aes(x=variable, group=variable, y = value)) +
+  geom_boxplot()
+```
+# Altro

@@ -1,0 +1,18 @@
+model{
+  for(i in 1:I){                       
+    for(j in 1:J) {                    
+      theta[i,j] <- (psi[j] + tau[i])/2       #or psi[j]*tau[i]   
+      X[i,j] ~ dbern(theta[i,j])      
+    }
+  }
+  
+  z_tau ~ dmnorm(rep(0,I),Sigma_tau)          # Prior data
+  for (i in 1:I) {
+    tau[i] <- qbeta(pnorm(z_tau[i],0,1),2,2)  # Prior
+  }
+
+  z_psi ~ dmnorm(rep(0,J),Sigma_psi)          # Prior data
+  for (j in 1:J) {
+    psi[j] <- qbeta(pnorm(z_psi[j],0,1),2,2)  # Prior
+  }
+}

@@ -1,16 +1,16 @@
 model{
   for(i in 1:I){                       
     for(j in 1:J) {                    
-      theta[i,j] <- (psi[j] + tau[i])/2 #or psi[j]*tau[i] 
+      theta[i,j] <- (psi[j] + tau[i])/2   #or psi[j]*tau[i] # or   
       X[i,j] ~ dbern(theta[i,j])      
     }
   }
   
   for (i in 1:I) {
-    tau[i] ~ dbeta(3,3) 
+    tau[i] ~ dbeta(1,1)  # Prior
   }
     
   for (j in 1:J) {
-    psi[j] ~ dbeta(3,3) 
+    psi[j] ~ dbeta(1,1)  # Prior
   }
 }
