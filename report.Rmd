@@ -13,6 +13,7 @@ library(viridisLite)
 library(LaplacesDemon)
 library(TeachingDemos)
 library(rstan)
+library(beeswarm)
 data = read.csv('data/matteo-glasses-edited.csv') %>% 
   select(num_range('X', 1:11)) %>%
   replace(. == 'Yay', 1) %>%
@@ -54,7 +55,7 @@ heatmap(melt(data), 'Var2', 'Var1')
 
 
 ## Goals 
-
+The Goal of this analysis is to find which rater is the strictest one, and which pair of glasses is the best one. 
 
 # Jags
 
@@ -124,7 +125,7 @@ log_likelihood <- function(data) data %>%
 # Jags
 We'll use the software JAGS and its `r` interface to perform simulation and sampling.
 
-```{r}
+```{r echo=FALSE}
 library('R2jags')
 ITER = 10000
 BURNIN = 1000
@@ -145,7 +146,7 @@ Than the probability of approval of an item $j$ from the rater $i$ is the averag
 $$\theta_{ij} = \frac{\psi_j + \tau_i}{2}$$
 
 Here's the JAGS code for the modelling part.
-```{r}
+```{r echo=FALSE}
 system('cat models/independent-betas.txt')
 ```
 
@@ -154,7 +155,7 @@ Note that we model the priors to be weakly centralized Beta distributions, inste
 ### Simulation
 Finally we can run the simulation, in order to check for convergence later we set different starting points for the parameters.
 
-```{r}
+```{r betas jags, echo=FALSE}
 init.betas = list(
   init1 = list(mu_tau=0.5, prec_tau=4),  # beta(2,2)
   init2 = list(mu_tau=0.1, prec_tau=10), # beta(1,9)
@@ -181,7 +182,7 @@ jags.betas$BUGSoutput$DIC
 ### Results
 #### $\theta$ grid
 We then visualize the medians of the $\theta_{ij}$ parameters. 
-```{r}
+```{r echo=FALSE}
 betas.mcmc %>%
   get_theta_grid %>%
   heatmap + 
@@ -193,7 +194,7 @@ We notice how the model is able to capture many of the patterns that we saw in t
 #### $\psi$ Confidence Intervals
 Then we plot can look at the confidence intervals for the obtained parameters:
 
-```{r}
+```{r echo=FALSE}
 betas.hpd.psi = betas.mcmc %>% 
   get_vector_variable('psi') %>%
   summarise_vec
@@ -209,7 +210,7 @@ We note how the first, 7th and last (11th) $\psi$ are the lowest ones, while the
 
 #### $\tau$ Confidence Intervals
 When doing the same kind of analysis for the people's strictness instead we don't get results as clear as for the items. 
-```{r}
+```{r echo=FALSE}
 betas.hpd.tau = betas.mcmc %>% 
   get_vector_variable('tau') %>%
   summarise_vec
@@ -231,7 +232,7 @@ We can see that some confidence intervals are more lowered centered (as for rate
 
 ### $\tau$ importance
 In order to assess if the $\tau$ parameters are actually useful we can compare the likelihood of the data given the model that we just fitted against the likelihood of the data where the $\tau$ parameters are just the mean of all taus: $\tau_u = mean_i \ \tau_i$.
-```{r}
+```{r echo=FALSE}
 # For each beta 
 betas.u_tau = betas.mcmc %>% 
   select(starts_with('tau')) %>%
@@ -250,7 +251,7 @@ betas_u_tau.mcmc %>% get_theta_grid %>% heatmap()
 
 The likelihoods are different, but not so much: in fact the computed Bayes Factor is very little, and according to standard interpretation of the $BF$ this is a very weak evidence of actual performance difference among these models.
 
-```{r}
+```{r echo=FALSE}
 betas.log_lik = log_likelihood(betas.mcmc)
 betas_u_tau.log_lik = log_likelihood(betas_u_tau.mcmc)
 
@@ -280,14 +281,13 @@ where $\sigma$ is the well-known logistic function.
 
 In the context of Item Response Analysis this is a *1PL* model (Rasch) where we model with $\tau_i$ the difficulty of items ($b_i$) and with $\psi_j$ the proficiency of people ($\theta_j$).
 
-```{r}
+```{r echo=FALSE}
 system('cat models/rasch-hyerarchical.txt')
-system("cmd.exe", input = "type models\\rasch-hyerarchical.txt")
 ```
 
 Also this time we run the model with multiple starting points, so that we can check their rightful convergence later.
 
-```{r}
+```{r rasch jags, echo=FALSE}
 init.rasch = list(
   init1 = list(mu_tau=0, prec_tau=1),  
   init2 = list(mu_tau=-2, prec_tau=0.1),
@@ -315,7 +315,7 @@ When plotting the values of $\theta_{ij}$ instead we notice how we are still abl
 I believe this is due to the average between $\psi$ and $\tau$ that was done in the last model, that induced some kind of smoothing.
 
 
-```{r}
+```{r echo=FALSE}
 rasch.mcmc %>%
   get_theta_grid() %>%
   heatmap() + 
@@ -325,7 +325,7 @@ rasch.mcmc %>%
 
 
 
-```{r}
+```{r echo=FALSE}
 rasch.hpd.psi = rasch.mcmc %>% 
   get_vector_variable('psi') %>%
   summarise_vec()
@@ -339,7 +339,7 @@ rasch.hpd.psi %>%
 
 
 
-```{r}
+```{r echo=FALSE}
 rasch.hpd.tau = rasch.mcmc %>% 
   get_vector_variable('tau') %>%
   summarise_vec
@@ -372,7 +372,7 @@ We note how it appears that the parameters converges together, even despite the 
 
 ### Traces
 Here we can look at the initial trace of some of the parameters, first of the Beta model:
-```{r}
+```{r echo=FALSE}
 tplots.betas = vars.tplot %>%
   map(~ jags.trace(betas.mcmc, ., lim=c(1,40), ylim=T))
 names(tplots.betas) = vars.tplot 
@@ -398,7 +398,7 @@ plot_grid(plotlist = tplots.rasch,
 ### Diagnosics
 We now compute some diagnostic values for checking model convergence, In particular we'll look at:
 
-```{r}
+```{r diagnostics, echo=FALSE}
 check_convergence <- function(jags_out) {
   sims.array = jags_out$BUGSoutput$sims.array
   dev_index = which((dimnames(sims.array)[[3]]) == 'deviance')
@@ -418,7 +418,6 @@ check_convergence <- function(jags_out) {
 
 remove_indices = \(x) sub('\\[(\\d+,)*\\d+\\]','', x)
 
-
 betas.check = check_convergence(jags.betas)
 rasch.check = check_convergence(jags.rasch)
 ```
@@ -426,19 +425,15 @@ rasch.check = check_convergence(jags.rasch)
 
 #### R-hat
 This parameter compares agreement between different chains of the sampling, and it checks if the chains converge to the same point for each parameter. We then plot the *R-hat* for each of our 556 parameters.
-```{r}
-betas.check$rhat %>%
-  enframe %>%
+```{r echo=FALSE}
+dplyr::bind_rows(list(
+  betas=betas.check$rhat%>%enframe, 
+  rasch=rasch.check$rhat%>%enframe), .id = 'source') %>%
   mutate(parameter = remove_indices(name)) %>%
-  ggplot(aes(x=value, fill=parameter)) +
-  geom_jitter
-
-
-dplyr::bind_rows(list(betas=%>%as_tibble, rasch=rasch.check$rhat%>%as_tibble), .id = 'source') %>%
-  ggplot(aes(x=value, color = source, fill=source)) +
-  geom_histogram(binwidth=5e-4) + 
-  geom_density(fill=NA) +
-  labs(title='Rhat for different parameters')
+  ggplot(aes(x=parameter, y=value, color=source)) +
+  geom_beeswarm(cex=0.5) +
+  labs(title='Rhat for different parameters') +
+  ylab('R-hat')
 ```
 Since we observe that all parameters are well below the recommended 1.05 threshold we can conclude that the different chains of the model have converged to the same space.
 
@@ -447,21 +442,24 @@ We also note that the Rasch model tends to have a lower value of *R-hat*.
 #### Effective Sample Size
 This parameter tells us how many independent samples our simulation actually contains.
 
-```{r}
-dplyr::bind_rows(list(betas=betas.check$ess%>%as_tibble, rasch=rasch.check$ess%>%as_tibble), .id = 'source') %>%
-  ggplot(aes(x=value, fill = source, color=source)) +
-  geom_histogram(aes(x=value,y=after_stat(density)),binwidth = 100) +
-  geom_density(aes(x=value,y=after_stat(density)*5), fill=NA) +
-  geom_vline(xintercept=100) +
+```{r echo=FALSE}
+dplyr::bind_rows(list(
+  betas=betas.check$ess%>%enframe, 
+  rasch=rasch.check$ess%>%enframe), .id = 'source') %>%
+  mutate(parameter = remove_indices(name)) %>%
+  ggplot(aes(x=parameter, y=value, color=source)) +
+  geom_beeswarm(cex=0.5) +
+  ylab('Effective Sample Size') +
+  geom_hline(yintercept=100, linetype='dashed', color='orchid') +
   labs(title='Effective Sample Size for different parameters')
 ```
 
 Yet again we see that both the chains are way above the recommended threshold of 100, and again we notice how the Rasch model tends to perform better (higher ESS).
 
 #### Autocorrelation
+In order to understand how uch each sample is dependent on the previous one we can plot the Autocorrelation of the series, the faster this value converges to 0, the better it is.
 
-```{r}
-
+```{r echo=FALSE}
 acf.plot = function(acf) acf %>%
   mutate(parameter = remove_indices(parameter)) %>%
   summarise(.by=c(parameter, lag),
@@ -470,25 +468,27 @@ acf.plot = function(acf) acf %>%
             lower  = quantile(value, 0.05)
           ) %>%
   ggplot(aes(x=lag, color = parameter)) +
-  geom_line(aes(y=median)) +
+  geom_line(aes(x=lag,y=median)) +
   geom_errorbar(aes(ymin=lower, ymax=upper)) +
   geom_hline(yintercept=c(0.05, -0.05), linetype='dotted') + 
   ylab('ACF') +
   theme(legend.position="bottom")
-```
 
-```{r}
 list(rasch = rasch.check, betas = betas.check) %>% 
   map(~ .$acf %>% acf.plot) %>%
   plot_grid(plotlist=., labels=c('betas','rasch'), ncol=2)
 ```
+
+We note how both models tend to have a new uncorrelated sample every 200 or so iterations for the hyperpriors, and the hyperprior `mu_tau` seems a bit more problematic and autocorrelated than the others.
+
+In the rest of the parameters it looks like that the Rasch model has less autocorrelation, and in particular the $\theta$ parameters go very fast towards 0.
 
 ## Model Comparison
 ### Binary Cross Entropy
 We can borrow this tool to measure how distant are the obtained $\theta$ values from the data $X$, by computing the mean binary entropy:
 $$-H_{ij} =X_{ij}log(\theta_{ij}) + (1-X_{ij})log(1-\theta_{ij})$$
 Finding that:
-```{r}
+```{r bce, echo=FALSE}
 betas.mcmc %>% 
   select(starts_with('theta')) %>%
   apply(1, \(y.hat) -(y.true*log(y.hat) + (1-y.true)*log(1-y.hat))) %>%
@@ -511,7 +511,7 @@ $$
 ppp = P(\sum_{ij} \hat{X}_{ij}  > \sum_{ij} X_{ij})
 $$
 where $\hat{X}_{ij}$ is the predicted future data, usually called $y_{rep}$ or $y_{new}$.
-```{r}
+```{r test, echo=FALSE}
 T1.y = sum(data, na.rm=T)
 
 T1.yrep.betas = betas.mcmc %>% 
@@ -532,7 +532,7 @@ text(x=220, y=3000, labels = paste('ppp-value:', pppvalue.sum.betas), col='red')
 The score we obtain for the Beta model looks good enough, and it doesn't look like there's a lot of discrepancy between the median of the future data and the real one.
 
 But if we repeat the test with the Rasch model, we see an almost perfect score! Very near to the ideal 0.5.
-```{r}
+```{r test rasch, echo=FALSE}
 T1.yrep.rasch = rasch.mcmc %>% 
   select(starts_with('theta')) %>%
   mutate_all(~ rbern(., .)) %>%
@@ -550,13 +550,13 @@ text(x=220, y=3000, labels = paste('ppp-value:', pppvalue.sum.rasch), col='red')
 ### Bayes Factor and model comparisom
 We want to compare the two models and understand which one is fitting better the data. So as a first thing we compute the _Likelihoods_ of the data given the models.
 
-```{r}
+```{r likelihood, echo=FALSE}
 betas.log_lik = log_likelihood(betas.mcmc)
 rasch.log_lik = log_likelihood(rasch.mcmc)
 ```
 
 So now we can obtain the likelihood ratio between model beta and model rasch:
-```{r}
+```{r echo=FALSE}
 exp(betas.log_lik - rasch.log_lik)
 ```
 
@@ -569,7 +569,7 @@ If we want to model this data with a frequentist approach, than we can assume th
 Then it's pretty straightforward to prove that in this scenario:
 $$\theta_{ij} = \frac{\tau_i \cdot \psi_j}{M} ; \ \ \ M = mean(X_{ij}) $$
 
-```{r}
+```{r echo=FALSE}
 freq.tau = data %>% apply(1, \(X) mean(X, na.rm = T))
 freq.psi = data %>% apply(2, \(X) mean(X, na.rm = T))
  
@@ -584,7 +584,7 @@ freq.theta %>%
 
 ## ppp-value for Sum test
 When repeating the sum test above with the frequentist model the results are quite good: better than the Beta model and only slightly worse than the Rasch model:
-```{r}
+```{r test freq, echo=FALSE}
 T1.yrep.freq = numeric(10000)
 
 for (i in 1:10000)
@@ -593,16 +593,6 @@ for (i in 1:10000)
 mean(T1.yrep.freq >  T1.y)
 
 T1.yrep.freq %>% hist
-
-```
-
-# Converge
-
-
-# Censored Items: can the model recover data?
-What happens if we censor some random ratings? Will the model be able to recover their original value?
-
-```{r}
 
 ```
 
