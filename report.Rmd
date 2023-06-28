@@ -12,6 +12,7 @@ library(cowplot)
 library(viridisLite)
 library(LaplacesDemon)
 library(TeachingDemos)
+library(rstan)
 data = read.csv('data/matteo-glasses-edited.csv') %>% 
   select(num_range('X', 1:11)) %>%
   replace(. == 'Yay', 1) %>%
@@ -423,9 +424,9 @@ rasch.check = check_convergence(jags.rasch)
 This parameter compares agreement between different chains of the sampling, and it checks if the chains converge to the same point for each parameter. We then plot the *R-hat* for each of our 556 parameters.
 ```{r}
 dplyr::bind_rows(list(betas=betas.check$rhat%>%as_tibble, rasch=rasch.check$rhat%>%as_tibble), .id = 'source') %>%
-  ggplot(aes(x=value, color = source)) +
-  geom_histogram(position='identity', alpha=0.5, fill='white') + 
-  geom_density() +
+  ggplot(aes(x=value, color = source, fill=source)) +
+  geom_histogram() + 
+  geom_density(fill=NA) +
   labs(title='Rhat for different parameters')
 ```
 Since we observe that all parameters are well below the recommended 1.05 threshold we can conclude that the different chains of the model have converged to the same space.
@@ -460,16 +461,21 @@ check_convergence <- function(jags_out) {
   for(i in 1:K) {
     sims = sims.array[,,i]
     #check$rhat[i] = sims %>% Rhat
-    #check$ess[i]  = sims %>% ess_bulk\
+    #check$ess[i]  = sims %>% ess_bulk
   }
   
-  sims.array[1,,]
+  sims.array %>% apply(c(2,3), .%>% acf(., lag.max = 500, plot=F))
   #return(check)
 }
 
-check_convergence(jags.betas)
+d = check_convergence(jags.betas)
 ```
 
+```{r}
+
+d%>%map(unlist) %>% lapply(as.data.frame.list) %>% bind_rows()
+
+```
 
 ## Model Comparison
 ### Binary Cross Entropy
