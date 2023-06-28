@@ -23,7 +23,7 @@ https://people.stat.sc.edu/hansont/stat740/jags_user_manual.pdf
 
 
 # Data
-The data consists in matrix $X$ of $45 \times 11$ observations, where each $X_{ij}$ is either an approval or a rejection of the $i$th judge to the $j$th pair of glasses (items).
+The data consists in matrix $X$ of $45 \times 11$ observations, where each $X_{ij}$ is either an approval or a rejection of the $i$th rater to the $j$th pair of glasses (items).
 
 Some of these datapoints are missing.
 
@@ -106,7 +106,7 @@ jags.trace <- function(data, var) data %>%
   melt() %>%
   rowid_to_column("index") %>%
   ggplot(aes(x=index,y = value)) +
-  geom_line() + ylim(0,1)
+  geom_line() #+ ylim(0,1)
   
 ```
 
@@ -134,6 +134,7 @@ t = dir.mcmc %>%
 
 sum(t$value > 1)
 ```
+
 
 ```{r}
 get_vector_variable <- function(data, var) data%>%
@@ -255,4 +256,173 @@ mvbeta.mcmc %>%
   ggplot(aes(x=variable, group=variable, y = value)) +
   geom_boxplot()
 ```
+
+# Item Response - Rasch
+```{r}
+system('cat models/rasch.txt')
+```
+
+
+```{r}
+init.rasch = list(init1 = list(psi=rep(0, J), tau=rep(0, I)))
+
+jags.rasch = jags(jags_data,
+     model.file = 'models/rasch.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     inits = init.rasch,
+     n.thin = 1,
+     n.chains = length(init.rasch),
+     parameters.to.save = c('tau', 'psi', 'theta'),
+)
+
+rasch.mcmc = jags_output_as_df(jags.rasch)
+
+jags.rasch$BUGSoutput$DIC
+```
+
+
+
+```{r}
+rasch.mcmc %>%
+  get_theta_grid() %>%
+  heatmap()
+```
+
+
+```{r}
+tplots.rasch = vars.tplot %>%
+  map(~ jags.trace(rasch.mcmc, .))
+names(tplots.rasch) = vars.tplot 
+
+plot_grid(plotlist = tplots.rasch,
+          ncol = 2, labels=vars.tplot)
+```
+
+```{r}
+rasch.mcmc %>% 
+  get_vector_variable('tau') %>%
+  ggplot(aes(x=variable, group=variable, y = value)) +
+  geom_boxplot()
+```
+
+
+# Item Response - 2 parameters
+```{r}
+system('cat models/irt-2pl.txt')
+```
+
+
+```{r}
+init.irt_2pl = list(init1 = list(psi=rep(0, J), tau=rep(0, I), alpha=rep(1,I)))
+
+jags.irt_2pl = jags(jags_data,
+     model.file = 'models/irt-2pl.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     inits = init.irt_2pl,
+     n.thin = 1,
+     n.chains = length(init.irt_2pl),
+     parameters.to.save = c('tau', 'psi', 'theta', 'alpha'),
+)
+
+irt_2pl.mcmc = jags_output_as_df(jags.irt_2pl)
+
+jags.irt_2pl$BUGSoutput$DIC
+```
+
+
+
+```{r}
+irt_2pl.mcmc %>%
+  get_theta_grid() %>%
+  heatmap()
+```
+```{r}
+jags.trace(irt_2pl.mcmc, 'alpha[7]')
+```
+
+
+```{r}
+tplots.irt_2pl = vars.tplot %>%
+  map(~ jags.trace(irt_2pl.mcmc, .))
+names(tplots.irt_2pl) = vars.tplot 
+
+plot_grid(plotlist = tplots.irt_2pl,
+          ncol = 2, labels=vars.tplot)
+```
+
+```{r}
+irt_2pl.mcmc %>% 
+  get_vector_variable('alpha') %>%
+  ggplot(aes(x=variable, group=variable, y = log(value))) +
+  geom_boxplot()
+```
+
+# Item Response - Rasch
+```{r}
+system('cat models/rasch-hyerachical.txt')
+```
+
+
+```{r}
+init.rasch_h = list(init1 = list(mu_psi = 0, sigma_psi = 1, tau=rep(0, I)))
+
+jags.rasch_h = jags(jags_data,
+     model.file = 'models/rasch-hyerachical.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     inits = init.rasch_h,
+     n.thin = 1,
+     n.chains = length(init.rasch_h),
+     parameters.to.save = c('tau', 'psi', 'theta', 'mu_psi', 'sigma_psi'),
+)
+
+rasch_h.mcmc = jags_output_as_df(jags.rasch_h)
+
+jags.rasch_h$BUGSoutput$DIC
+```
+
+
+
+```{r}
+rasch_h.mcmc %>%
+  get_theta_grid() %>%
+  heatmap()
+```
+
+
+```{r}
+tplots.rasch_h = vars.tplot %>%
+  map(~ jags.trace(rasch_h.mcmc, .))
+names(tplots.rasch_h) = vars.tplot 
+
+plot_grid(plotlist = tplots.rasch_h,
+          ncol = 2, labels=vars.tplot)
+```
+
+```{r}
+rasch_h.mcmc %>% 
+  get_vector_variable('psi') %>%
+  ggplot(aes(x=variable, group=variable, y = value)) +
+  geom_boxplot()
+```
+```{r}
+jags.trace <- function(data, var, from=1, to=NULL) data %>%
+  select(var) %>%
+  melt() %>%
+  rowid_to_column("index") %>%
+  ggplot(aes(x=index,y = value)) +
+  geom_line() + xlim(0,500)#+ ylim(0,1
+
+
+jags.trace(rasch_h.mcmc, 'psi[1]')
+```
+```{r}
+rasch_h.mcmc$mu_psi %>% sd
+rasch_h.mcmc$sigma_psi %>% sd
+
+```
+
+
 # Altro

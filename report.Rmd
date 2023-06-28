@@ -1,0 +1,597 @@
+---
+title: "SDS - project"
+author: "Matteo Migliarini"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r imports, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(tidyverse)
+library(reshape2)
+library(cowplot)
+library(viridisLite)
+library(LaplacesDemon)
+library(TeachingDemos)
+data = read.csv('data/matteo-glasses-edited.csv') %>% 
+  select(num_range('X', 1:11)) %>%
+  replace(. == 'Yay', 1) %>%
+  replace(. == 'Nay', 0) %>% 
+  replace(. == '',   NA) %>%
+  mutate_all(as.numeric) %>%
+  as.matrix()
+```
+
+# Data
+The data consists in matrix $X$ of $45 \times 11$ observations, where each $X_{ij}$ is either an approval or a rejection of the $i$th person (rater) of the $j$th pair of glasses (items).
+
+Some of these datapoints are missing.
+
+Below a graphical rappresentation of the dataset.
+```{r values heatmap, echo=FALSE}
+heatmap <- function(melted_data, x='x', y='y', value='value') melted_data %>%
+  rename(x = x, y=y, value=value) %>%
+  ggplot(aes(x,y, fill=value)) +
+  geom_raster() + theme(aspect.ratio=1) + scale_fill_viridis_c(limits=c(0,1)) +
+  theme(
+   axis.text.x = element_blank(), 
+   panel.background = element_blank(),
+   axis.text.y = element_blank(),
+   axis.ticks.y = element_blank(),
+   axis.ticks.x = element_blank(),
+  ) + 
+  xlab('glasses') + ylab('people') + 
+  scale_x_discrete(position = "top")
+
+heatmap(melt(data), 'Var2', 'Var1')
+```
+
+## Modelling Assumptions
+- each item has an intrisic property of "quality", we'll model this for each item with the parameter $\psi_j$, where an higher value means higher quality.
+- each person judges the objects and may be more or less strict in their judgements, we'll model this with the parameter $tau_i$, where a lower value means a strciter judge.
+- the probability that the $i$-th person will rate the $j$-th pair of glasses positevely will be called $\theta_{ij}$.
+- $\theta_{ij}$ is a monotonic increasing in both $\psi_j$ and $tau_i$.
+
+
+## Goals 
+
+
+# Jags
+
+```{r utility functions, include=FALSE}
+# converts output of JAGS to dataframe of samples
+jags_output_as_df <- function(jags_out) {
+  bugs_out = jags_out$BUGSoutput$sims.array
+  dfl = list()
+  for (i in 1:4) {
+    dfl[[i]] = as.data.frame(bugs_out[,i,]) %>%
+      rowid_to_column('time')
+  }
+  
+  bind_rows(dfl, .id = "init")
+}
+
+# selects the theta variables in the dataframe and turns them in a grid
+get_theta_grid <- function(data) data %>%
+  select(starts_with('theta')) %>%
+  melt() %>%
+  group_by(variable) %>%
+  summarise(value = median(value)) %>%
+  mutate(
+    y=sub("theta\\[(\\d+),\\d+\\]", "\\1", variable) %>% as.numeric,
+    x=sub("theta\\[\\d+,(\\d+)\\]", "\\1", variable) %>% as.numeric,
+  )
+
+# selects a specific vector variable (psi or tau) 
+get_vector_variable <- function(data, var) data%>%
+  select(c(starts_with(var), time, init)) %>%
+  melt(id.vars = c('time', 'init')) %>%
+  mutate(
+    variable=sub('\\w+\\[(\\d+).*', '\\1', variable) %>% as.numeric
+  )
+
+# plots the traces of a specific variable
+jags.trace <- function(data, var, lim=c(1,max(data$time)), ylim=F) data %>%
+  select(c(var, time, init)) %>%
+  melt(id.vars = c('time', 'init')) %>%
+  ggplot(aes(x=time,y = value, color = init)) +
+  geom_line() + {
+      if(ylim) ylim(0,1)
+  } + xlim(lim[1], lim[2])
+
+hpd.confplot <- function(data, size = 4) data %>%
+  ggplot() +
+  geom_segment(aes(x=variable, y=low_bound, xend=variable, yend=up_bound, color=sd), lineend = 'round', linewidth = size) +
+  geom_point(aes(x=variable, y=median), color = 'white', shape = 18, size=size)
+
+summarise_vec <- function(data) data %>%
+  group_by(variable) %>%
+  summarise(
+    low_bound = emp.hpd(value, conf=0.90)[1], 
+    up_bound = emp.hpd(value, conf=0.90)[2],
+    mean = mean(value), 
+    median = median(value),
+    sd = sd(value)
+  )
+
+log_likelihood <- function(data) data %>% 
+  select(starts_with('theta')) %>%
+  apply(1, \(y.hat) dbern(y.true, y.hat, log=TRUE)) %>% 
+  t %>% as.data.frame %>% summarise_all(mean) %>% melt %>% na.omit %>% pull %>%
+  sum
+```
+
+# Jags
+We'll use the software JAGS and its `r` interface to perform simulation and sampling.
+
+```{r}
+library('R2jags')
+ITER = 10000
+BURNIN = 1000
+
+I = nrow(data)
+J = ncol(data)
+jags_data = list(X = data, I = I, J = J)
+
+y.true = (data %>% melt)$value
+# variables of which we want to see the trace plot
+vars.tplot = c('theta[13,11]', 'theta[13,10]','tau[11]', 'tau[14]', 'psi[2]', 'psi[11]')
+```
+
+## Independent Betas
+We model each $\psi_j$ and $\tau_i$ as Beta distributed random variables, independent from each other. In this model they represent the marginal probability of an item to be approved (independently from the rater) and vice-versa. 
+
+Than the probability of approval of an item $j$ from the rater $i$ is the average: 
+$$\theta_{ij} = \frac{\psi_j + \tau_i}{2}$$
+
+Here's the JAGS code for the modelling part.
+```{r}
+system('cat models/independent-betas.txt')
+```
+
+Note that we model the priors to be weakly centralized Beta distributions, instead of flat ones. This is because we make some kind of "assumption of mediocrity", where we assume that most items and people will be in the middle.
+
+### Simulation
+Finally we can run the simulation, in order to check for convergence later we set different starting points for the parameters.
+
+```{r}
+init.betas = list(
+  init1 = list(mu_tau=0.5, prec_tau=4),  # beta(2,2)
+  init2 = list(mu_tau=0.1, prec_tau=10), # beta(1,9)
+  init3 = list(mu_tau=0.9, prec_tau=10), # beta(9,1)
+  init4 = list(mu_tau=0.5, prec_tau=2)   # uniform
+)
+
+set.seed(1789)
+jags.betas = jags(jags_data,
+     model.file = 'models/betas-hyerarchical.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     n.thin=1,
+     inits = init.betas,
+     n.chains = length(init.betas),
+     parameters.to.save = c('psi', 'tau', 'theta', 'mu_tau', 'prec_tau', 'alpha_tau', 'beta_tau'),
+)
+
+betas.mcmc = jags_output_as_df(jags.betas)
+
+jags.betas$BUGSoutput$DIC
+```
+
+### Results
+#### $\theta$ grid
+We then visualize the medians of the $\theta_{ij}$ parameters. 
+```{r}
+betas.mcmc %>%
+  get_theta_grid %>%
+  heatmap + 
+  labs(title = 'θ - Beta model')
+```
+
+We notice how the model is able to capture many of the patterns that we saw in the data, such as the 4th item (column) being brighter than all others, and also the 11th being the darkest. 
+
+#### $\psi$ Confidence Intervals
+Then we plot can look at the confidence intervals for the obtained parameters:
+
+```{r}
+betas.hpd.psi = betas.mcmc %>% 
+  get_vector_variable('psi') %>%
+  summarise_vec
+
+betas.hpd.psi %>%
+  hpd.confplot() +
+  ylab('ψ probability of acceptance') + 
+  xlab('items') + 
+  labs(title = 'HPD confidence intervals for ψ', subtitle = 'α = 0.1')
+```
+
+We note how the first, 7th and last (11th) $\psi$ are the lowest ones, while the 4th is especially higher than the others.
+
+#### $\tau$ Confidence Intervals
+When doing the same kind of analysis for the people's strictness instead we don't get results as clear as for the items. 
+```{r}
+betas.hpd.tau = betas.mcmc %>% 
+  get_vector_variable('tau') %>%
+  summarise_vec
+
+betas.hpd.tau %>%
+  hpd.confplot(size=3) +
+  geom_hline(
+    yintercept = qbeta(
+      c(0.05, 0.95), 
+      betas.mcmc$alpha_tau %>% median,
+      betas.mcmc$beta_tau  %>% median)
+    ,linetype='dotted', col = 'orchid') + 
+  ylab('τ probability of acceptance') + 
+  xlab('items') + 
+  labs(title = 'HPD confidence intervals for τ', subtitle = 'α = 0.1')
+```
+
+We can see that some confidence intervals are more lowered centered (as for rater #19 and #34), while some others are more higher centered (as for rater #9), but most of the confidence intervals are very large, and all of them overlap significantly with each other, meaning that maybe they aren't very significant.
+
+### $\tau$ importance
+In order to assess if the $\tau$ parameters are actually useful we can compare the likelihood of the data given the model that we just fitted against the likelihood of the data where the $\tau$ parameters are just the mean of all taus: $\tau_u = mean_i \ \tau_i$.
+```{r}
+# For each beta 
+betas.u_tau = betas.mcmc %>% 
+  select(starts_with('tau')) %>%
+  apply(1, mean)
+
+betas_u_tau.mcmc = data.frame(unique_tau = betas.u_tau)
+for(j in 1:J) {
+  theta_j = (betas.mcmc[[paste0('psi[',j,']')]] + betas.u_tau)/2 
+  for(i in 1:I) {
+    betas_u_tau.mcmc[[paste0('theta[',i,',',j,']')]] = theta_j
+  }
+}
+
+betas_u_tau.mcmc %>% get_theta_grid %>% heatmap()
+```
+
+The likelihoods are different, but not so much: in fact the computed Bayes Factor is very little, and according to standard interpretation of the $BF$ this is a very weak evidence of actual performance difference among these models.
+
+```{r}
+betas.log_lik = log_likelihood(betas.mcmc)
+betas_u_tau.log_lik = log_likelihood(betas_u_tau.mcmc)
+
+exp(betas.log_lik - betas_u_tau.log_lik)
+```
+
+So we can conclude that modelling the $\tau$ parameters separately or as a single entity is almost the same.
+
+
+### Comments on model
+This model is quite simple and naive, being one of the first thing that came to my mind. So I also tried some variations: 
+
+- **Multivariate Beta** priors: all the $\psi_j$ and $\tau_i$ are correlated among themselves. The distribution was obtained through a gaussian copula, but the results were very unsatisfying since with this many parameters the model had a wild variance. Also I believe it didn't make a lot of sense to assume a correlation among the raters strictness.
+- **Non-hyerachical model**: all the $\psi_j$ and $\tau_i$ are independent beta distribution with no common hyperparameter. As expected this model performs worse, since the in this way the simulation cannot leverage on the shared properties of the parameters.
+- Forced **symmetric Beta** distribution: at the beginning I assumed that the parameters must've been symmetrical in the point 0.5, such that for the Beta distribution the shape and rate parameters would've been equal $\alpha=\beta$. This model turned out to perform worse than the current one.
+
+
+## Rasch Model
+The Item Response Analysis may turn useful for this dataset. 
+Classical item response analysis models the "_difficulty_" of items in order to measure objectively the "_proficiency_" of people. In this case it's a bit reversed because we model the "_strictness_" of raters in order to measure objectively the "_goodness_" of items (the glasses).
+
+This time we model $\psi$ and $\tau$ with normal distributions and then we define:
+$$
+\theta_{ij} = \sigma(\psi_i-\tau_j)
+$$
+where $\sigma$ is the well-known logistic function.
+
+In the context of Item Response Analysis this is a *1PL* model (Rasch) where we model with $\tau_i$ the difficulty of items ($b_i$) and with $\psi_j$ the proficiency of people ($\theta_j$).
+
+```{r}
+system('cat models/rasch-hyerarchical.txt')
+system("cmd.exe", input = "type models\\rasch-hyerarchical.txt")
+```
+
+Also this time we run the model with multiple starting points, so that we can check their rightful convergence later.
+
+```{r}
+init.rasch = list(
+  init1 = list(mu_tau=0, prec_tau=1),  
+  init2 = list(mu_tau=-2, prec_tau=0.1),
+  init3 = list(mu_tau=0, prec_tau=10), 
+  init4 = list(mu_tau=2, prec_tau=0.1))
+
+set.seed(1789)
+jags.rasch = jags(jags_data,
+     model.file = 'models/rasch-hyerarchical.txt',
+     n.iter = ITER + BURNIN,
+     n.burnin = BURNIN,
+     inits = init.rasch,
+     n.thin=1,
+     n.chains = length(init.rasch),
+     parameters.to.save = c('tau', 'psi', 'theta', 'mu_tau', 'sigma_tau'),
+)
+
+rasch.mcmc = jags_output_as_df(jags.rasch)
+jags.rasch$BUGSoutput$DIC
+```
+
+First we note that albeit more sophisticated this method doesn't have a wildly different _DIC_ score, and this is probably fault of the very small number of samples that we have.
+
+When plotting the values of $\theta_{ij}$ instead we notice how we are still able to capture the same patterns as before (high values for glasses#4 and low #11, etc...), but that this time the colors are much brighter than before. 
+I believe this is due to the average between $\psi$ and $\tau$ that was done in the last model, that induced some kind of smoothing.
+
+
+```{r}
+rasch.mcmc %>%
+  get_theta_grid() %>%
+  heatmap() + 
+  labs(title = 'θ - Rasch model')
+```
+
+
+
+
+```{r}
+rasch.hpd.psi = rasch.mcmc %>% 
+  get_vector_variable('psi') %>%
+  summarise_vec()
+
+rasch.hpd.psi %>%
+  hpd.confplot + 
+  ylab('ψ proficiency') + 
+  xlab('items') + 
+  labs(title = 'HPD confidence intervals for ψ', subtitle = 'α = 0.1')
+```
+
+
+
+```{r}
+rasch.hpd.tau = rasch.mcmc %>% 
+  get_vector_variable('tau') %>%
+  summarise_vec
+
+rasch.sd = rasch.mcmc$mu_tau %>% median %>% sqrt
+
+rasch.hpd.tau %>%
+  hpd.confplot(size=3) + 
+  geom_hline(yintercept = rasch.mcmc$sigma_tau %>% median + c(rasch.sd, -rasch.sd), color='red', linetype='dotted') +
+  ylab('ψ proficiency') + 
+  xlab('items') + 
+  labs(title = 'HPD confidence intervals for ψ', subtitle = 'α = 0.1')
+```
+
+
+### Comments on model
+This model is much more sophisticated than the other, and draws from the Item Response Analysis theory, but it's still a simple enough model for the low amount of data that we got.
+
+I also considered some variations of this model, but at the end decided against, preferring the simpler model.
+- **3PL** model: the full fledged model looked inadequate for this kind of data, due to the presence of the $c_i$ variable which stands for the probability of choosing the right choice by guessing, and this doesn't make a lot of sense in the context of glasses being rated.
+- **2PL** model: I tried this model, but it performed poorly. The $a_i$ parameters which should account for the significance of each question (in our case the significance of a person) would've been nice to analyze, but the increase in the DIC was too significant.
+
+# Model checks
+We now want to check that our models actually converged and are in fact able to capture the nature of our data.
+
+In order to do this we'll use various diagnostic tools.
+
+## Convergence Check
+We note how it appears that the parameters converges together, even despite the different starting points.
+
+### Traces
+Here we can look at the initial trace of some of the parameters, first of the Beta model:
+```{r}
+tplots.betas = vars.tplot %>%
+  map(~ jags.trace(betas.mcmc, ., lim=c(1,40), ylim=T))
+names(tplots.betas) = vars.tplot 
+
+
+plot_grid(plotlist = tplots.betas,
+          ncol = 2, labels=vars.tplot)+ 
+  labs(title='Traces of first 40 iterations - Rasch')
+```
+
+And then the Rasch model:
+```{r echo=FALSE}
+tplots.rasch = vars.tplot %>%
+  map(~ jags.trace(rasch.mcmc, .,  lim=c(1,40)))
+names(tplots.rasch) = vars.tplot 
+
+plot_grid(plotlist = tplots.rasch,
+          ncol = 2, labels=vars.tplot) + 
+  labs(title='Traces of first 40 iterations - Rasch')
+```
+
+
+### Diagnosics
+We now compute some diagnostic values for checking model convergence, In particular we'll look at:
+
+```{r}
+check_convergence <- function(jags_out) {
+  sims.array = jags_out$BUGSoutput$sims.array
+  K = dim(sims.array)[3]
+  check = list()
+  check$rhat = numeric(K)
+  check$ess  = numeric(K)
+
+  for(i in 1:K) {
+    sims = sims.array[,,i]
+    check$rhat[i] = sims %>% Rhat
+    check$ess[i]  = sims %>% ess_bulk
+  }
+  
+  return(check)
+}
+
+betas.check = check_convergence(jags.betas)
+rasch.check = check_convergence(jags.rasch)
+```
+
+
+#### R-hat
+This parameter compares agreement between different chains of the sampling, and it checks if the chains converge to the same point for each parameter. We then plot the *R-hat* for each of our 556 parameters.
+```{r}
+dplyr::bind_rows(list(betas=betas.check$rhat%>%as_tibble, rasch=rasch.check$rhat%>%as_tibble), .id = 'source') %>%
+  ggplot(aes(x=value, color = source)) +
+  geom_histogram(position='identity', alpha=0.5, fill='white') + 
+  geom_density() +
+  labs(title='Rhat for different parameters')
+```
+Since we observe that all parameters are well below the recommended 1.05 threshold we can conclude that the different chains of the model have converged to the same space.
+
+We also note that the Rasch model tends to have a lower value of *R-hat*.
+
+#### Effective Sample Size
+This parameter tells us how many independent samples our simulation actually contains.
+
+```{r}
+dplyr::bind_rows(list(betas=betas.check$ess%>%as_tibble, rasch=rasch.check$ess%>%as_tibble), .id = 'source') %>%
+  ggplot(aes(x=value, fill = source, color=source)) +
+  geom_histogram(aes(x=value,y=after_stat(density)),binwidth = 100) + 
+  geom_density(aes(x=value,y=after_stat(density)*5), fill=NA) +
+  geom_vline(xintercept=100) +
+  labs(title='Effective Sample Size for different parameters')
+```
+
+Yet again we see that both the chains are way above the recommended threshold of 100, and again we notice how the Rasch model tends to perform better (higher ESS).
+
+#### Autocorrelation
+
+```{r}
+check_convergence <- function(jags_out) {
+  sims.array = jags_out$BUGSoutput$sims.array
+  K = dim(sims.array)[3]
+  check = list()
+  check$rhat = numeric(K)
+  check$ess  = numeric(K)
+  check$acf  = numeric(K)
+
+  for(i in 1:K) {
+    sims = sims.array[,,i]
+    #check$rhat[i] = sims %>% Rhat
+    #check$ess[i]  = sims %>% ess_bulk\
+  }
+  
+  sims.array[1,,]
+  #return(check)
+}
+
+check_convergence(jags.betas)
+```
+
+
+## Model Comparison
+### Binary Cross Entropy
+We can borrow this tool to measure how distant are the obtained $\theta$ values from the data $X$, by computing the mean binary entropy:
+$$-H_{ij} =X_{ij}log(\theta_{ij}) + (1-X_{ij})log(1-\theta_{ij})$$
+Finding that:
+```{r}
+betas.mcmc %>% 
+  select(starts_with('theta')) %>%
+  apply(1, \(y.hat) -(y.true*log(y.hat) + (1-y.true)*log(1-y.hat))) %>%
+  t %>% as.data.frame() %>% melt %>% na.omit %>% pull %>% mean %>%
+  paste('Binary Cross Entropy - Betas:', .)
+
+rasch.mcmc %>% 
+  select(starts_with('theta')) %>%
+  apply(1, \(y.hat) -(y.true*log(y.hat) + (1-y.true)*log(1-y.hat))) %>%
+  t %>% as.data.frame() %>% melt %>% na.omit %>% pull %>% mean %>%
+  paste('Binary Cross Entropy - Rasch:', .)
+```
+
+### Posterior p-value
+In order to measure the fitness of the model over the data we want to test how much likely is it to observe the same number of total approved pairs of glasses both in the real data and in the simulated (future) one.
+Of course in this process we also account for the imputed data, by removing them from the predictions.
+
+In order to do this we compute the _posterior predictive p-value_ of the test by:
+$$
+ppp = P(\sum_{ij} \hat{X}_{ij}  > \sum_{ij} X_{ij})
+$$
+where $\hat{X}_{ij}$ is the predicted future data, usually called $y_{rep}$ or $y_{new}$.
+```{r}
+T1.y = sum(data, na.rm=T)
+
+T1.yrep.betas = betas.mcmc %>% 
+  select(starts_with('theta')) %>%
+  mutate_all(~ rbern(., .)) %>%
+  apply(1, \(y.hat) sum(y.hat * !is.na(y.true)))
+
+pppvalue.sum.betas = mean(T1.yrep.betas >  T1.y)
+
+T1.yrep.betas %>% hist(
+  main = 'Distribution of sum of acceptances ~ Beta model', 
+  xlab = 'Sum(X)'
+)
+abline(v=T1.y, col='red', lwd = 2)
+text(x=220, y=3000, labels = paste('ppp-value:', pppvalue.sum.betas), col='red')
+```
+
+The score we obtain for the Beta model looks good enough, and it doesn't look like there's a lot of discrepancy between the median of the future data and the real one.
+
+But if we repeat the test with the Rasch model, we see an almost perfect score! Very near to the ideal 0.5.
+```{r}
+T1.yrep.rasch = rasch.mcmc %>% 
+  select(starts_with('theta')) %>%
+  mutate_all(~ rbern(., .)) %>%
+  apply(1, \(y.hat) sum(y.hat * !is.na(y.true)))
+
+pppvalue.sum.rasch = mean(T1.yrep.rasch >  T1.y)
+T1.yrep.rasch %>% hist(
+  main = 'Distribution of sum of acceptances ~ Rasch model', 
+  xlab = 'Sum(X)'
+)
+abline(v=T1.y, col='red', lwd = 2)
+text(x=220, y=3000, labels = paste('ppp-value:', pppvalue.sum.rasch), col='red')
+```
+
+### Bayes Factor and model comparisom
+We want to compare the two models and understand which one is fitting better the data. So as a first thing we compute the _Likelihoods_ of the data given the models.
+
+```{r}
+betas.log_lik = log_likelihood(betas.mcmc)
+rasch.log_lik = log_likelihood(rasch.mcmc)
+```
+
+So now we can obtain the likelihood ratio between model beta and model rasch:
+```{r}
+exp(betas.log_lik - rasch.log_lik)
+```
+
+
+# Frequentist comparison
+If we want to model this data with a frequentist approach, than we can assume that:
+- $\tau_i$ is the marginal probability that the $i$th rater will accept a pair of glasses;
+- $\psi_j$ is the marginal probability that the $j$th item will be accepted;
+
+Then it's pretty straightforward to prove that in this scenario:
+$$\theta_{ij} = \frac{\tau_i \cdot \psi_j}{M} ; \ \ \ M = mean(X_{ij}) $$
+
+```{r}
+freq.tau = data %>% apply(1, \(X) mean(X, na.rm = T))
+freq.psi = data %>% apply(2, \(X) mean(X, na.rm = T))
+ 
+freq.theta = freq.psi %*% t(freq.tau) %>% t 
+freq.theta = freq.theta / mean(freq.tau)
+freq.theta = freq.theta %>% pmax(0) %>% pmin(1) 
+
+freq.theta %>% 
+  melt %>%
+  heatmap(x='Var2', y='Var1')
+```
+
+## ppp-value for Sum test
+When repeating the sum test above with the frequentist model the results are quite good: better than the Beta model and only slightly worse than the Rasch model:
+```{r}
+T1.yrep.freq = numeric(10000)
+
+for (i in 1:10000)
+  T1.yrep.freq[i] = rbern(freq.theta, freq.theta * !is.na(data)) %>% sum
+
+mean(T1.yrep.freq >  T1.y)
+
+T1.yrep.freq %>% hist
+
+```
+
+# Converge
+
+
+# Censored Items: can the model recover data?
+What happens if we censor some random ratings? Will the model be able to recover their original value?
+
+```{r}
+
+```
+
+

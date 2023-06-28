@@ -1,0 +1,25 @@
+model{
+  for(i in 1:I){                       
+    for(j in 1:J) {                    
+      theta[i,j] <- (tau[i] + psi[j])/2   #or psi[j]*tau[i] # or   
+      X[i,j] ~ dbern(theta[i,j])      
+    }
+  }
+
+  for (j in 1:J) {
+    psi[j] ~ dbeta(1.5,1.5) T(0.001,0.999)
+  }
+
+  for (i in 1:I) {
+    tau[i] ~ dbeta(alpha_tau, beta_tau) T(0.001,0.999) 
+  }
+  
+  # Hyperpriors
+  mu_tau   ~ dunif(0,1)    
+  prec_tau ~ dgamma(8,2) 
+  # reparametrization
+  alpha_tau <-   mu_tau   * prec_tau
+  beta_tau  <- (1-mu_tau) * prec_tau
+  
+
+}

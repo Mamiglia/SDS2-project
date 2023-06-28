@@ -1,0 +1,18 @@
+model{
+  for(i in 1:I){                       
+    for(j in 1:J) {   
+      delta[i,j] <- psi[j] - tau[i]
+      theta[i,j] <- 1 / (1 + exp(-delta[i,j]))
+      X[i,j] ~ dbern(theta[i,j])      
+    }
+  }
+  
+  for (i in 1:I) {
+    tau[i] ~ dnorm(0, 1) # beta - difficulty
+  }
+  
+  
+  for (j in 1:J) {
+    psi[j] ~ dnorm(0,1) # theta - proficiency
+  }
+}

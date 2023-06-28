@@ -6,11 +6,13 @@ model{
     }
   }
   
+  prec_tau ~ dexp(1)
   for (i in 1:I) {
-    tau[i] ~ dbeta(2,2)  # Prior
+    tau[i] ~ dbeta(1+prec_tau, 1+prec_tau)  # Prior
   }
-    
+  
+  prec_psi ~ dexp(1)
   for (j in 1:J) {
-    psi[j] ~ dbeta(1.5,1.5)  # Prior
+    psi[j] ~ dbeta(1+prec_psi, 1+prec_psi)  # Prior
   }
 }

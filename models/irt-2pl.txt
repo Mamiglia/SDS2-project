@@ -1,0 +1,26 @@
+model{
+  for(i in 1:I){                       
+    for(j in 1:J) {   
+      delta[i,j] <- alpha[i] * (psi[j] - tau[i])
+      theta[i,j] <- 1 / (1 + exp(-delta[i,j]))
+      X[i,j] ~ dbern(theta[i,j])      
+    }
+  }
+  
+  for (i in 1:I) {
+    tau[i] ~ dnorm(mu_tau, prec_tau)  # beta - difficulty
+    alpha[i] ~ dlnorm(0, prec_alpha) # # alpha - discrimination
+  }
+  
+  for (j in 1:J) {
+    psi[j] ~ dnorm(0, 1) # theta - proficiency
+  }
+  
+    # Hyperpriors
+  mu_tau ~ dnorm(0,5)
+  prec_tau ~ dgamma(4,4)
+  sigma_tau <- 1/prec_tau
+  
+  prec_alpha ~ dgamma(4,4)
+  sigma_alpha <- 1/prec_alpha
+}
