@@ -401,19 +401,23 @@ We now compute some diagnostic values for checking model convergence, In particu
 ```{r}
 check_convergence <- function(jags_out) {
   sims.array = jags_out$BUGSoutput$sims.array
+  dev_index = which((dimnames(sims.array)[[3]]) == 'deviance')
+  sims.array <- sims.array[,,-c(dev_index)] # remove deviance
   K = dim(sims.array)[3]
   check = list()
-  check$rhat = numeric(K)
-  check$ess  = numeric(K)
-
-  for(i in 1:K) {
-    sims = sims.array[,,i]
-    check$rhat[i] = sims %>% Rhat
-    check$ess[i]  = sims %>% ess_bulk
-  }
+  check$rhat = sims.array %>% plyr::aaply(3, Rhat)
+  check$ess  = sims.array %>% plyr::aaply(3, ess_bulk)
+  check$acf  = sims.array %>% 
+    plyr::adply(c(2,3), \(s) acf(s, lag.max = 250, plot=F)$acf) %>%
+    rename(c('chain'='X1', 'parameter'='X2')) %>%
+    melt(id.vars = c('chain', 'parameter')) %>%
+    mutate(lag = as.integer(variable))
   
   return(check)
 }
+
+remove_indices = \(x) sub('\\[(\\d+,)*\\d+\\]','', x)
+
 
 betas.check = check_convergence(jags.betas)
 rasch.check = check_convergence(jags.rasch)
@@ -423,9 +427,16 @@ rasch.check = check_convergence(jags.rasch)
 #### R-hat
 This parameter compares agreement between different chains of the sampling, and it checks if the chains converge to the same point for each parameter. We then plot the *R-hat* for each of our 556 parameters.
 ```{r}
-dplyr::bind_rows(list(betas=betas.check$rhat%>%as_tibble, rasch=rasch.check$rhat%>%as_tibble), .id = 'source') %>%
+betas.check$rhat %>%
+  enframe %>%
+  mutate(parameter = remove_indices(name)) %>%
+  ggplot(aes(x=value, fill=parameter)) +
+  geom_jitter
+
+
+dplyr::bind_rows(list(betas=%>%as_tibble, rasch=rasch.check$rhat%>%as_tibble), .id = 'source') %>%
   ggplot(aes(x=value, color = source, fill=source)) +
-  geom_histogram() + 
+  geom_histogram(binwidth=5e-4) + 
   geom_density(fill=NA) +
   labs(title='Rhat for different parameters')
 ```
@@ -439,7 +450,7 @@ This parameter tells us how many independent samples our simulation actually con
 ```{r}
 dplyr::bind_rows(list(betas=betas.check$ess%>%as_tibble, rasch=rasch.check$ess%>%as_tibble), .id = 'source') %>%
   ggplot(aes(x=value, fill = source, color=source)) +
-  geom_histogram(aes(x=value,y=after_stat(density)),binwidth = 100) + 
+  geom_histogram(aes(x=value,y=after_stat(density)),binwidth = 100) +
   geom_density(aes(x=value,y=after_stat(density)*5), fill=NA) +
   geom_vline(xintercept=100) +
   labs(title='Effective Sample Size for different parameters')
@@ -450,31 +461,26 @@ Yet again we see that both the chains are way above the recommended threshold of
 #### Autocorrelation
 
 ```{r}
-check_convergence <- function(jags_out) {
-  sims.array = jags_out$BUGSoutput$sims.array
-  K = dim(sims.array)[3]
-  check = list()
-  check$rhat = numeric(K)
-  check$ess  = numeric(K)
-  check$acf  = numeric(K)
 
-  for(i in 1:K) {
-    sims = sims.array[,,i]
-    #check$rhat[i] = sims %>% Rhat
-    #check$ess[i]  = sims %>% ess_bulk
-  }
-  
-  sims.array %>% apply(c(2,3), .%>% acf(., lag.max = 500, plot=F))
-  #return(check)
-}
-
-d = check_convergence(jags.betas)
+acf.plot = function(acf) acf %>%
+  mutate(parameter = remove_indices(parameter)) %>%
+  summarise(.by=c(parameter, lag),
+            median = median(value),
+            upper  = quantile(value, 0.95),
+            lower  = quantile(value, 0.05)
+          ) %>%
+  ggplot(aes(x=lag, color = parameter)) +
+  geom_line(aes(y=median)) +
+  geom_errorbar(aes(ymin=lower, ymax=upper)) +
+  geom_hline(yintercept=c(0.05, -0.05), linetype='dotted') + 
+  ylab('ACF') +
+  theme(legend.position="bottom")
 ```
 
 ```{r}
-
-d%>%map(unlist) %>% lapply(as.data.frame.list) %>% bind_rows()
-
+list(rasch = rasch.check, betas = betas.check) %>% 
+  map(~ .$acf %>% acf.plot) %>%
+  plot_grid(plotlist=., labels=c('betas','rasch'), ncol=2)
 ```
 
 ## Model Comparison
