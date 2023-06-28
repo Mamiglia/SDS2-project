@@ -13,7 +13,7 @@ library(viridisLite)
 library(LaplacesDemon)
 library(TeachingDemos)
 library(rstan)
-library(beeswarm)
+library(ggbeeswarm)
 data = read.csv('data/matteo-glasses-edited.csv') %>% 
   select(num_range('X', 1:11)) %>%
   replace(. == 'Yay', 1) %>%
@@ -100,11 +100,13 @@ jags.trace <- function(data, var, lim=c(1,max(data$time)), ylim=F) data %>%
       if(ylim) ylim(0,1)
   } + xlim(lim[1], lim[2])
 
+# plot HPD intervals
 hpd.confplot <- function(data, size = 4) data %>%
   ggplot() +
   geom_segment(aes(x=variable, y=low_bound, xend=variable, yend=up_bound, color=sd), lineend = 'round', linewidth = size) +
   geom_point(aes(x=variable, y=median), color = 'white', shape = 18, size=size)
 
+# summarise a vector dataframe
 summarise_vec <- function(data) data %>%
   group_by(variable) %>%
   summarise(
@@ -115,6 +117,7 @@ summarise_vec <- function(data) data %>%
     sd = sd(value)
   )
 
+# compute log likelihood of the data given the model
 log_likelihood <- function(data) data %>% 
   select(starts_with('theta')) %>%
   apply(1, \(y.hat) dbern(y.true, y.hat, log=TRUE)) %>% 
@@ -122,7 +125,6 @@ log_likelihood <- function(data) data %>%
   sum
 ```
 
-# Jags
 We'll use the software JAGS and its `r` interface to perform simulation and sampling.
 
 ```{r echo=FALSE}
@@ -175,9 +177,13 @@ jags.betas = jags(jags_data,
 )
 
 betas.mcmc = jags_output_as_df(jags.betas)
-
-jags.betas$BUGSoutput$DIC
 ```
+
+```{r}
+jags.betas$BUGSoutput$DIC
+
+```
+
 
 ### Results
 #### $\theta$ grid
@@ -210,6 +216,8 @@ We note how the first, 7th and last (11th) $\psi$ are the lowest ones, while the
 
 #### $\tau$ Confidence Intervals
 When doing the same kind of analysis for the people's strictness instead we don't get results as clear as for the items. 
+
+In fact the raters look very similar to each other in their distributions, with all of them being inside the $\alpha = 0.1$ confidence interval for the parent beta distribution (pink lines). 
 ```{r echo=FALSE}
 betas.hpd.tau = betas.mcmc %>% 
   get_vector_variable('tau') %>%
@@ -306,14 +314,18 @@ jags.rasch = jags(jags_data,
 )
 
 rasch.mcmc = jags_output_as_df(jags.rasch)
-jags.rasch$BUGSoutput$DIC
 ```
 
 First we note that albeit more sophisticated this method doesn't have a wildly different _DIC_ score, and this is probably fault of the very small number of samples that we have.
+```{r}
+jags.rasch$BUGSoutput$DIC
+```
+
+
+#### $\theta$ grid
 
 When plotting the values of $\theta_{ij}$ instead we notice how we are still able to capture the same patterns as before (high values for glasses#4 and low #11, etc...), but that this time the colors are much brighter than before. 
 I believe this is due to the average between $\psi$ and $\tau$ that was done in the last model, that induced some kind of smoothing.
-
 
 ```{r echo=FALSE}
 rasch.mcmc %>%
@@ -323,8 +335,8 @@ rasch.mcmc %>%
 ```
 
 
-
-
+#### $\psi$ Confidence Intervals
+Now the CI looks much more precise, and although the scale of the values lost some of its interpretability since it's not anymore in $[0,1]$, we can clearly see that item #4 is easily the best one.
 ```{r echo=FALSE}
 rasch.hpd.psi = rasch.mcmc %>% 
   get_vector_variable('psi') %>%
@@ -337,6 +349,9 @@ rasch.hpd.psi %>%
   labs(title = 'HPD confidence intervals for ψ', subtitle = 'α = 0.1')
 ```
 
+
+#### $\tau$ Confidence Intervals
+Also here the difficulties almost look all the same (although one can clearly see that there's a bit more variability now).
 
 
 ```{r echo=FALSE}
@@ -383,6 +398,7 @@ plot_grid(plotlist = tplots.betas,
   labs(title='Traces of first 40 iterations - Rasch')
 ```
 
+
 And then the Rasch model:
 ```{r echo=FALSE}
 tplots.rasch = vars.tplot %>%
@@ -394,6 +410,7 @@ plot_grid(plotlist = tplots.rasch,
   labs(title='Traces of first 40 iterations - Rasch')
 ```
 
+As a visual check we observe that overall the traces are crossing each other pretty often, meaning that they are all reaching the same convergence point. Later we'll use the *R-hat* diagnostic parameter to formalize this visual check.
 
 ### Diagnosics
 We now compute some diagnostic values for checking model convergence, In particular we'll look at:
@@ -489,20 +506,21 @@ We can borrow this tool to measure how distant are the obtained $\theta$ values 
 $$-H_{ij} =X_{ij}log(\theta_{ij}) + (1-X_{ij})log(1-\theta_{ij})$$
 Finding that:
 ```{r bce, echo=FALSE}
-betas.mcmc %>% 
+bce <- function(mcmc) mcmc %>%
   select(starts_with('theta')) %>%
   apply(1, \(y.hat) -(y.true*log(y.hat) + (1-y.true)*log(1-y.hat))) %>%
-  t %>% as.data.frame() %>% melt %>% na.omit %>% pull %>% mean %>%
+  t %>% as.data.frame() %>% melt %>% na.omit %>% pull %>% mean
+
+betas.mcmc %>%
+  bce %>%
   paste('Binary Cross Entropy - Betas:', .)
 
 rasch.mcmc %>% 
-  select(starts_with('theta')) %>%
-  apply(1, \(y.hat) -(y.true*log(y.hat) + (1-y.true)*log(1-y.hat))) %>%
-  t %>% as.data.frame() %>% melt %>% na.omit %>% pull %>% mean %>%
+  bce %>%
   paste('Binary Cross Entropy - Rasch:', .)
 ```
 
-### Posterior p-value
+### Posterior p-value Test
 In order to measure the fitness of the model over the data we want to test how much likely is it to observe the same number of total approved pairs of glasses both in the real data and in the simulated (future) one.
 Of course in this process we also account for the imputed data, by removing them from the predictions.
 
@@ -544,7 +562,7 @@ T1.yrep.rasch %>% hist(
   xlab = 'Sum(X)'
 )
 abline(v=T1.y, col='red', lwd = 2)
-text(x=220, y=3000, labels = paste('ppp-value:', pppvalue.sum.rasch), col='red')
+text(x=230, y=3000, labels = paste('ppp-value:', pppvalue.sum.rasch), col='red')
 ```
 
 ### Bayes Factor and model comparisom
@@ -560,6 +578,7 @@ So now we can obtain the likelihood ratio between model beta and model rasch:
 exp(betas.log_lik - rasch.log_lik)
 ```
 
+Which can be interpreted as strong evidence *against* the Beta model and in favor of the Rasch.
 
 # Frequentist comparison
 If we want to model this data with a frequentist approach, than we can assume that:
@@ -574,7 +593,7 @@ freq.tau = data %>% apply(1, \(X) mean(X, na.rm = T))
 freq.psi = data %>% apply(2, \(X) mean(X, na.rm = T))
  
 freq.theta = freq.psi %*% t(freq.tau) %>% t 
-freq.theta = freq.theta / mean(freq.tau)
+freq.theta = freq.theta / mean(freq.psi)
 freq.theta = freq.theta %>% pmax(0) %>% pmin(1) 
 
 freq.theta %>% 
@@ -585,6 +604,7 @@ freq.theta %>%
 ## ppp-value for Sum test
 When repeating the sum test above with the frequentist model the results are quite good: better than the Beta model and only slightly worse than the Rasch model:
 ```{r test freq, echo=FALSE}
+T1.y = sum(data, na.rm=T)
 T1.yrep.freq = numeric(10000)
 
 for (i in 1:10000)
@@ -593,7 +613,7 @@ for (i in 1:10000)
 mean(T1.yrep.freq >  T1.y)
 
 T1.yrep.freq %>% hist
-
+abline(v=T1.y, col='red', lwd = 2)
 ```
 
 
