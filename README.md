@@ -7,6 +7,8 @@ This project involves an analysis of a dataset consisting of approval or rejecti
 ## Modelling
 The project uses two modeling approaches: the first model is a Beta model with independent Beta-distributed random variables representing the item quality and rater strictness. The second model is a Rasch model, an **item response analysis** model, where the item quality and rater strictness are modeled with normal distributions. In the Rasch model, the probability of approval of an item by a rater is computed using a logistic function.
 
+![Untitled](https://github.com/Mamiglia/SDS2-project/assets/33762284/1ab16932-cdb9-4ea8-8558-13db5b260c4b)
+
 The R Markdown document showcases the data visualization, modeling assumptions, goals, and the implementation of both the Beta and Rasch models using the **JAGS** software and its R interface. It also presents various diagnostic tools for checking model convergence, model comparison metrics like Bayes Factor and likelihood ratio, and frequentist comparison for the same dataset.
 
 This GitHub repository contains the necessary data files, R scripts, and the R Markdown file to reproduce the analysis and results.
