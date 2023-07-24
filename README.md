@@ -1,7 +1,7 @@
 # Finding the best pair of glasses
 This anlysis was done as a final project of the exam Statistical Methods for Data Science - II, with prof. Tardella.
 
-![Static Badge](https://img.shields.io/badge/Report%20-%20HTML%20-%20orange?link=https%3A%2F%2Frawcdn.githack.com%2FMamiglia%2FSDS2-project%2Fmain%2Freport.html)
+[![Static Badge](https://img.shields.io/badge/Report%20-%20HTML%20-%20orange?link=https%3A%2F%2Frawcdn.githack.com%2FMamiglia%2FSDS2-project%2Fmain%2Freport.html)](https://rawcdn.githack.com/Mamiglia/SDS2-project/main/report.html)
 
 ## Description
 This project involves an analysis of a dataset consisting of approval or rejection ratings for different pairs of glasses, provided by multiple raters (people). The data is in the form of a matrix of 45x11 observations, with some missing values. The primary goal of the analysis is to identify the strictest rater and determine the best pair of glasses.
